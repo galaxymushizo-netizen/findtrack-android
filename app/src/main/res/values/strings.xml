@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">FindTrack</string>
+    <string name="app_tagline">Find your devices. Stay connected.</string>
+    <string name="notification_channel_name">Device tracking</string>
+    <string name="notification_channel_desc">Ongoing notification shown while FindTrack is tracking a device.</string>
+    <string name="nav_home">Home</string>
+    <string name="nav_devices">Devices</string>
+    <string name="nav_map">Map</string>
+    <string name="nav_history">History</string>
+</resources>
