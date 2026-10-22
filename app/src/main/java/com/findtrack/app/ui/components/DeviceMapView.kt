@@ -33,6 +33,10 @@ import kotlin.math.sin
  *      device markers (last-known GPS fix when available).
  *   2) Without a key, the offline stylized vector map is used so the app remains
  *      fully functional with zero configuration.
+ *
+ * The camera always follows the user's live GPS fix. No hardcoded fallback
+ * city (Riverside Park) is ever shown — if there is no fix yet, the map
+ * stays empty until one arrives.
  */
 @Composable
 fun DeviceMapView(
@@ -50,46 +54,65 @@ fun DeviceMapView(
     val useGoogleMaps = BuildConfig.MAPS_API_KEY.isNotBlank()
 
     if (useGoogleMaps) {
-        val initialTarget = userLocation ?: LatLng(40.8030, -73.9630)
+        // Camera state is recreated on every composition. We always recenter
+        // whenever userLocation changes, so tab switches and resume work.
         val cameraPositionState = rememberCameraPositionState {
-            position = CameraPosition.fromLatLngZoom(initialTarget, zoom)
+            position = CameraPosition.fromLatLngZoom(
+                userLocation ?: LatLng(0.0, 0.0), zoom
+            )
         }
 
-        var cameraLocked by remember { mutableStateOf(userLocation != null) }
+        // Always fly to the user's live position whenever it arrives or changes.
         LaunchedEffect(userLocation) {
             val loc = userLocation
-            if (loc != null && !cameraLocked) {
-                cameraLocked = true
-                cameraPositionState.animate(CameraUpdateFactory.newLatLngZoom(loc, zoom))
+            if (loc != null) {
+                cameraPositionState.animate(
+                    CameraUpdateFactory.newLatLngZoom(loc, zoom)
+                )
             }
         }
 
         Box(modifier = modifier) {
-            GoogleMap(
-                modifier = Modifier.fillMaxSize(),
-                properties = MapProperties(isMyLocationEnabled = userLocation != null),
-                uiSettings = MapUiSettings(
-                    zoomControlsEnabled = false,
-                    myLocationButtonEnabled = false,
-                    compassEnabled = false,
-                    mapToolbarEnabled = false
-                ),
-                cameraPositionState = cameraPositionState
-            ) {
-                pins.forEach { pin ->
-                    val coordinate = pin.realLatLng ?: estimateCoordinate(userLocation ?: LatLng(40.8030, -73.9630), pin)
-                    val markerState = remember(pin.address, coordinate.latitude, coordinate.longitude) {
-                        MarkerState(position = coordinate)
-                    }
-                    Marker(
-                        state = markerState,
-                        title = pin.calloutTitle ?: "Device",
-                        snippet = pin.calloutSubtitle,
-                        onClick = {
-                            onPinTap(pin.address)
-                            true
+            if (userLocation == null) {
+                // No GPS fix yet — show empty map, no fake city.
+                GoogleMap(
+                    modifier = Modifier.fillMaxSize(),
+                    properties = MapProperties(isMyLocationEnabled = false),
+                    uiSettings = MapUiSettings(
+                        zoomControlsEnabled = false,
+                        myLocationButtonEnabled = false,
+                        compassEnabled = false,
+                        mapToolbarEnabled = false
+                    ),
+                    cameraPositionState = cameraPositionState
+                )
+            } else {
+                GoogleMap(
+                    modifier = Modifier.fillMaxSize(),
+                    properties = MapProperties(isMyLocationEnabled = true),
+                    uiSettings = MapUiSettings(
+                        zoomControlsEnabled = false,
+                        myLocationButtonEnabled = false,
+                        compassEnabled = false,
+                        mapToolbarEnabled = false
+                    ),
+                    cameraPositionState = cameraPositionState
+                ) {
+                    pins.forEach { pin ->
+                        val coordinate = pin.realLatLng ?: estimateCoordinate(userLocation, pin)
+                        val markerState = remember(pin.address, coordinate.latitude, coordinate.longitude) {
+                            MarkerState(position = coordinate)
                         }
-                    )
+                        Marker(
+                            state = markerState,
+                            title = pin.calloutTitle ?: "Device",
+                            snippet = pin.calloutSubtitle,
+                            onClick = {
+                                onPinTap(pin.address)
+                                true
+                            }
+                        )
+                    }
                 }
             }
 
@@ -99,7 +122,9 @@ fun DeviceMapView(
                     onRecenter = {
                         val loc = userLocation
                         if (loc != null) {
-                            cameraPositionState.move(CameraUpdateFactory.newLatLngZoom(loc, zoom))
+                            cameraPositionState.move(
+                                CameraUpdateFactory.newLatLngZoom(loc, zoom)
+                            )
                         }
                         onRecenter?.invoke()
                     },

@@ -126,7 +126,9 @@ fun FinderMapScreen(
                 ),
                 modifier = Modifier.fillMaxSize(),
                 zoom = 16f,
-                showControls = true
+                showControls = true,
+                userLocation = userLatLng,
+                onPinTap = { }
             )
         }
 

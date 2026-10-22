@@ -73,6 +73,9 @@ interface HistoryDao {
 
     @Query("DELETE FROM history")
     suspend fun clear()
+
+    @Query("DELETE FROM history WHERE isDemo = 1")
+    suspend fun deleteDemo()
 }
 
 @Database(

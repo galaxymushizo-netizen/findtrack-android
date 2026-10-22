@@ -152,7 +152,9 @@ fun DeviceDetailScreen(
                     ),
                     modifier = Modifier.fillMaxSize(),
                     zoom = 16f,
-                    showControls = true
+                    showControls = true,
+                    userLocation = userLatLng,
+                    onPinTap = { }
                 )
                 // Floating "Last known location" card (bottom-left)
                 Row(

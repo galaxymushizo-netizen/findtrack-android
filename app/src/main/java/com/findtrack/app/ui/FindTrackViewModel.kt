@@ -173,11 +173,15 @@ class FindTrackViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
 
-        // Seed the design's sample history when demo mode is switched on.
+        // Demo mode: seed sample history when switched on, clear it when switched off.
         viewModelScope.launch {
             combine(prefs.demoMode, historyDao.observeCount()) { demo, count -> demo to count }
                 .distinctUntilChanged().collect { (demo, count) ->
-                    if (demo && count == 0) seedDemoHistory()
+                    if (demo && count == 0) {
+                        seedDemoHistory()
+                    } else if (!demo && count > 0) {
+                        clearDemoHistory()
+                    }
                 }
         }
     }
@@ -340,6 +344,13 @@ class FindTrackViewModel(app: Application) : AndroidViewModel(app) {
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
         }.timeInMillis
+
+    /** Remove all demo history entries when demo mode is switched off. */
+    private fun clearDemoHistory() {
+        viewModelScope.launch {
+            historyDao.deleteDemo()
+        }
+    }
 
     override fun onCleared() {
         scanner.release(this)

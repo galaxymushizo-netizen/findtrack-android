@@ -93,7 +93,7 @@ fun HomeScreen(
 
     val pins = remember(devices, selectedAddress, history) {
         devices
-            .filter { it.lastSeen != null && it.distanceM != null }
+            .filter { !it.isDemo && it.lastSeen != null && it.distanceM != null }
             .map { entry ->
                 val fix = history.firstOrNull {
                     it.address == entry.address && it.lat != null && it.lon != null
@@ -303,7 +303,10 @@ fun HomeScreen(
                 pins = pins,
                 modifier = Modifier.fillMaxSize(),
                 zoom = 16f,
-                showControls = true
+                showControls = true,
+                userLocation = userLatLng,
+                selectedAddress = selectedAddress,
+                onPinTap = { vm.select(it) }
             )
             if (demoMode) {
                 Text(
