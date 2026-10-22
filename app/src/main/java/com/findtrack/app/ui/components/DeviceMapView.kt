@@ -54,15 +54,16 @@ fun DeviceMapView(
     val useGoogleMaps = BuildConfig.MAPS_API_KEY.isNotBlank()
 
     if (useGoogleMaps) {
-        // Camera state is recreated on every composition. We always recenter
-        // whenever userLocation changes, so tab switches and resume work.
+        // Camera state remembers the user's GPS fix. When switching tabs and
+        // coming back, userLocation is the same LatLng value, so the same
+        // CameraPositionState is reused — map doesn't reset.
         val cameraPositionState = rememberCameraPositionState {
             position = CameraPosition.fromLatLngZoom(
                 userLocation ?: LatLng(0.0, 0.0), zoom
             )
         }
 
-        // Always fly to the user's live position whenever it arrives or changes.
+        // Always fly to the user's live position whenever a new fix arrives.
         LaunchedEffect(userLocation) {
             val loc = userLocation
             if (loc != null) {
@@ -176,7 +177,7 @@ fun DeviceMapView(
 
 private fun estimateCoordinate(origin: LatLng, pin: MapPin): LatLng {
     val distance = pin.distanceM.coerceAtMost(500.0)
-    val bearingRad = Math.toRadians(stableBearing(pin.address).toDouble())
+    val bearingRad = Math.toRadians(deviceBearing(pin.address).toDouble())
     val earthRadius = 6_371_000.0
     val angular = distance / earthRadius
     val lat1 = Math.toRadians(origin.latitude)
@@ -191,3 +192,10 @@ private fun estimateCoordinate(origin: LatLng, pin: MapPin): LatLng {
     return LatLng(Math.toDegrees(lat2), Math.toDegrees(lon2))
 }
 
+private fun deviceBearing(address: String): Float {
+    var hash = 0
+    for (c in address.toCharArray()) {
+        hash = 31 * hash + c.code
+    }
+    return (hash % 360).toFloat()
+}

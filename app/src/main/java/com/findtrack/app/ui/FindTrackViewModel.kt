@@ -8,6 +8,9 @@ import android.os.Build
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.compose.runtime.mutableStateOf
+import com.google.android.gms.maps.model.CameraPosition
+import com.google.android.gms.maps.model.LatLng
 import com.findtrack.app.FindTrackApp
 import com.findtrack.app.ble.DeviceIconType
 import com.findtrack.app.ble.TrackedDevice
@@ -144,6 +147,13 @@ class FindTrackViewModel(app: Application) : AndroidViewModel(app) {
             .map { fix -> fix?.let { com.google.android.gms.maps.model.LatLng(it.lat, it.lon) } }
             .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
+    /** Camera position for Google Map — survives tab switches because it lives in ViewModel. */
+    val cameraPosition = mutableStateOf(
+        com.google.android.gms.maps.model.CameraPosition.fromLatLngZoom(
+            com.google.android.gms.maps.model.LatLng(0.0, 0.0), 16f
+        )
+    )
+
     /** Last known real coordinates per device address (from History). */
     fun lastKnownCoordinates(address: String): Pair<Double, Double>? =
         history.value.firstOrNull { it.address == address && it.lat != null && it.lon != null }
@@ -153,6 +163,15 @@ class FindTrackViewModel(app: Application) : AndroidViewModel(app) {
         // Keep scanning while any screen is open.
         scanner.acquire(this)
         if (location.hasPermission()) location.prime()
+
+        // Keep camera centered on live GPS fix.
+        viewModelScope.launch {
+            userLatLng.collect { loc ->
+                if (loc != null) {
+                    cameraPosition.value = com.google.android.gms.maps.model.CameraPosition.fromLatLngZoom(loc, 16f)
+                }
+            }
+        }
 
         viewModelScope.launch {
             devices.debounce(300).collect { list ->
