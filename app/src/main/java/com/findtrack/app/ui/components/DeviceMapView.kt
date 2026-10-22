@@ -3,6 +3,7 @@ package com.findtrack.app.ui.components
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -10,10 +11,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.findtrack.app.BuildConfig
-import com.findtrack.app.R
 import com.findtrack.app.ui.components.MapPin
-import com.findtrack.app.util.TimeFormat
+import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
+import com.google.maps.android.compose.GoogleMap
+import com.google.maps.android.compose.MapProperties
+import com.google.maps.android.compose.MapUiSettings
+import com.google.maps.android.compose.Marker
+import com.google.maps.android.compose.MarkerState
+import com.google.maps.android.compose.rememberCameraPositionState
+import kotlin.math.cos
+import kotlin.math.sin
 
 /***
  * Unified map used by every map surface in the app.
@@ -30,40 +39,130 @@ fun DeviceMapView(
     pins: List<MapPin>,
     modifier: Modifier = Modifier,
     zoom: Float = 16f,
-    showControls: Boolean = true
+    showControls: Boolean = true,
+    userLocation: LatLng? = null,
+    selectedAddress: String? = null,
+    onPinTap: (String) -> Unit = {},
+    onZoomIn: (() -> Unit)? = null,
+    onZoomOut: (() -> Unit)? = null,
+    onRecenter: (() -> Unit)? = null
 ) {
     val useGoogleMaps = BuildConfig.MAPS_API_KEY.isNotBlank()
 
     if (useGoogleMaps) {
-        // Real Google Map — keys and setup are injected at build time.
-        // User: add maps.api.key=AIzaSy... to android/local.properties then rebuild.
-        Box(modifier = modifier.fillMaxSize()) {
-            // Placeholder: real GoogleMap composable would go here.
-            // Currently falls through to stylized map until key is provided.
-            android.util.Log.d("DeviceMapView", "Google Maps key present — showing real map (placeholder)")
+        val initialTarget = userLocation ?: LatLng(40.8030, -73.9630)
+        val cameraPositionState = rememberCameraPositionState {
+            position = CameraPosition.fromLatLngZoom(initialTarget, zoom)
+        }
+
+        var cameraLocked by remember { mutableStateOf(userLocation != null) }
+        LaunchedEffect(userLocation) {
+            val loc = userLocation
+            if (loc != null && !cameraLocked) {
+                cameraLocked = true
+                cameraPositionState.animate(CameraUpdateFactory.newLatLngZoom(loc, zoom))
+            }
+        }
+
+        Box(modifier = modifier) {
+            GoogleMap(
+                modifier = Modifier.fillMaxSize(),
+                properties = MapProperties(isMyLocationEnabled = userLocation != null),
+                uiSettings = MapUiSettings(
+                    zoomControlsEnabled = false,
+                    myLocationButtonEnabled = false,
+                    compassEnabled = false,
+                    mapToolbarEnabled = false
+                ),
+                cameraPositionState = cameraPositionState
+            ) {
+                pins.forEach { pin ->
+                    val coordinate = pin.realLatLng ?: estimateCoordinate(userLocation ?: LatLng(40.8030, -73.9630), pin)
+                    val markerState = remember(pin.address, coordinate.latitude, coordinate.longitude) {
+                        MarkerState(position = coordinate)
+                    }
+                    Marker(
+                        state = markerState,
+                        title = pin.calloutTitle ?: "Device",
+                        snippet = pin.calloutSubtitle,
+                        onClick = {
+                            onPinTap(pin.address)
+                            true
+                        }
+                    )
+                }
+            }
+
+            if (showControls) {
+                MapOverlayControls(
+                    showControls = true,
+                    onRecenter = {
+                        val loc = userLocation
+                        if (loc != null) {
+                            cameraPositionState.move(CameraUpdateFactory.newLatLngZoom(loc, zoom))
+                        }
+                        onRecenter?.invoke()
+                    },
+                    onZoomIn = {
+                        cameraPositionState.move(
+                            CameraUpdateFactory.newLatLngZoom(
+                                cameraPositionState.position.target,
+                                (cameraPositionState.position.zoom + 1f).coerceAtMost(20f)
+                            )
+                        )
+                        onZoomIn?.invoke()
+                    },
+                    onZoomOut = {
+                        cameraPositionState.move(
+                            CameraUpdateFactory.newLatLngZoom(
+                                cameraPositionState.position.target,
+                                (cameraPositionState.position.zoom - 1f).coerceAtLeast(3f)
+                            )
+                        )
+                        onZoomOut?.invoke()
+                    }
+                )
+            }
         }
         return
     }
 
-    // ------------------------------------------------------- stylized map fallback (no key)
     var stylizedZoom by remember { mutableFloatStateOf(1f) }
     StylizedMap(
         pins = pins,
         modifier = modifier,
-        zoom = stylizedZoom, // stylized map operates on a [0.5..2.5] scale
+        zoom = stylizedZoom,
         showControls = showControls,
         onZoomIn = {
             stylizedZoom = (stylizedZoom + 0.25f).coerceAtMost(2.5f)
-            // onZoomIn?.invoke()
+            onZoomIn?.invoke()
         },
         onZoomOut = {
             stylizedZoom = (stylizedZoom - 0.25f).coerceAtLeast(0.5f)
-            // onZoomOut?.invoke()
+            onZoomOut?.invoke()
         },
         onRecenter = {
             stylizedZoom = 1f
-            // onRecenter?.invoke()
+            onRecenter?.invoke()
         },
-        onPinTap = {}
+        onPinTap = onPinTap
     )
 }
+
+private fun estimateCoordinate(origin: LatLng, pin: MapPin): LatLng {
+    val distance = pin.distanceM.coerceAtMost(500.0)
+    val bearingRad = Math.toRadians(stableBearing(pin.address).toDouble())
+    val earthRadius = 6_371_000.0
+    val angular = distance / earthRadius
+    val lat1 = Math.toRadians(origin.latitude)
+    val lon1 = Math.toRadians(origin.longitude)
+    val lat2 = Math.asin(
+        sin(lat1) * cos(angular) + cos(lat1) * sin(angular) * cos(bearingRad)
+    )
+    val lon2 = lon1 + kotlin.math.atan2(
+        sin(bearingRad) * sin(angular) * cos(lat1),
+        cos(angular) - sin(lat1) * sin(lat2)
+    )
+    return LatLng(Math.toDegrees(lat2), Math.toDegrees(lon2))
+}
+
