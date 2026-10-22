@@ -91,8 +91,9 @@ fun HomeScreen(
     val featured: DeviceListEntry? = selectedDevice
         ?: devices.firstOrNull { it.lastSeen != null }
 
-    val pins = remember(devices, selectedAddress, history) {
-        devices
+    val pins = remember(devices, selectedAddress, history, userLatLng) {
+        // ----------------------------------- live devices (BLE scan)
+        val livePins = devices
             .filter { !it.isDemo && it.lastSeen != null && it.distanceM != null }
             .map { entry ->
                 val fix = history.firstOrNull {
@@ -103,10 +104,39 @@ fun HomeScreen(
                     iconType = entry.iconType,
                     distanceM = entry.distanceM ?: 10.0,
                     selected = entry.address == selectedAddress || (selectedAddress == null && featured?.address == entry.address),
-                    lat = fix?.lat,
-                    lon = fix?.lon
+                    lat = fix?.lat ?: 0.0,
+                    lon = fix?.lon ?: 0.0,
+                    calloutTitle = entry.name,
+                    calloutSubtitle = if (entry.lastSeen != null) "Last seen ${TimeFormat.relative(entry.lastSeen)}" else null
                 )
             }
+
+        // ----------------------------------- saved devices with real last-seen fix
+        val historyPins = devices
+            .filter { !it.isDemo && it.isSaved }
+            .flatMap { entry ->
+                history.firstOrNull {
+                    it.address == entry.address && it.lat != null && it.lon != null
+                }?.let { fix ->
+                    listOf(MapPin(
+                        address = entry.address,
+                        iconType = entry.iconType,
+                        distanceM = 0.0,
+                        selected = false,
+                        lat = fix.lat ?: 0.0,
+                        lon = fix.lon ?: 0.0,
+                        calloutTitle = entry.name,
+                        calloutSubtitle = if (entry.lastSeen != null) "Last seen ${TimeFormat.relative(entry.lastSeen)}" else "Saved device"
+                    ))
+                } ?: emptyList()
+            }
+
+        // Merge: live pins take precedence over history-only pins
+        (livePins + historyPins)
+            .groupBy { it.address }
+            .mapValues { it.value.first() }
+            .values
+            .toList()
     }
 
     Column(
